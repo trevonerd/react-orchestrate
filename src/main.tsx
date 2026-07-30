@@ -1,9 +1,9 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { ChoreographyDemo } from "./demo/ChoreographyDemo";
+import { PerfectDemo } from "./demo/PerfectDemo";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <ChoreographyDemo />
+    <PerfectDemo />
   </StrictMode>,
 );
