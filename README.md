@@ -1,86 +1,88 @@
 # OrchestRate
 
-🎼 OrchestRate: The Maestro of React Effects! 🎭
+Orchestra flussi di pagina in React con semplicità: scroll, fetch API, aggiornamento UI — nell'ordine che decidi tu.
 
-OrchestRate is a React library for orchestrating and executing effects with priorities and delays. It provides a simple way to manage complex sequences of asynchronous operations in your React applications.
+**Zero dipendenze runtime.** Compatibile con React 18 e 19.
 
-## Installation
+## Il problema
+
+Hai una pagina dove, all'apertura, vuoi:
+
+1. Scorrere fino a una sezione
+2. Caricare un'API
+3. Aggiornare un messaggio in base alla risposta
+4. Scorrere di nuovo
+
+Con `useEffect` sparsi nei componenti perdi il controllo sull'ordine. Con XState o redux-saga è overkill. **OrchestRate** è il mezzo: registri i passi, li esegui in ordine di priorità.
+
+## Installazione
 
 ```bash
-npm install orchestrate
+npm install react-orchestrate
 ```
 
-or
+## Uso rapido
 
-```bash
-yarn add orchestrate
-```
-
-## Features
-
-- Orchestrate multiple effects with different priorities
-- Add pre and post delays to effects
-- Set timeouts for effect execution
-- Cancel specific effects
-- Debug mode for detailed logging
-
-## Usage
-
-### Basic Setup
-
-Wrap your app or a part of it with the `OrchestRateProvider`:
-
-```jsx
-import { OrchestRateProvider } from 'orchestrate';
+```tsx
+import {
+  OrchestRateProvider,
+  scrollIntoView,
+  scrollTo,
+  useOrchestRateStep,
+} from 'react-orchestrate';
 
 function App() {
   return (
-    <OrchestRateProvider>
-      {/* Your app components */}
+    <OrchestRateProvider autoExecute autoExecuteDelay={300}>
+      <ScrollStep />
+      <FetchStep />
+      <MessageStep />
+      <FinalScrollStep />
     </OrchestRateProvider>
   );
 }
-```
 
-### Using the Hook
-
-Use the `useOrchestRate` hook to access the orchestration functions:
-
-```jsx
-import { useOrchestRate } from 'orchestrate';
-
-function MyComponent() {
-  const { orchestrate, execute, cancel } = useOrchestRate();
-
-  const handleClick = () => {
-    orchestrate('effect1', async () => {
-      // Your effect logic here
-    }, { priority: 1 });
-
-    orchestrate('effect2', async () => {
-      // Another effect
-    }, { priority: 2, preDelay: 1000 });
-
-    execute();
-  };
-
-  return <button onClick={handleClick}>Run Effects</button>;
+function ScrollStep() {
+  useOrchestRateStep(
+    'scroll-intro',
+    async () => scrollIntoView('#content'),
+    { priority: 100 },
+  );
+  return null;
 }
-```
 
-### Using the Effect Hook
+function FetchStep() {
+  useOrchestRateStep(
+    'fetch-data',
+    async () => {
+      const res = await fetch('/api/quote');
+      return res.json();
+    },
+    { priority: 80 },
+  );
+  return null;
+}
 
-For simpler cases, you can use the `useOrchestRateEffect` hook:
+function MessageStep() {
+  const [msg, setMsg] = useState('');
+  useOrchestRateStep(
+    'show-message',
+    async ({ get }) => {
+      const data = get<{ title: string }>('fetch-data');
+      setMsg(data?.title ?? '');
+    },
+    { priority: 60 },
+  );
+  return <p>{msg}</p>;
+}
 
-```jsx
-import { useOrchestRateEffect } from 'orchestrate';
-
-function MyComponent() {
-  useOrchestRateEffect('myEffect', async () => {
-    // Your effect logic here
-  }, { priority: 1 });
-
-  return <div>Effect will run on mount</div>;
+function FinalScrollStep() {
+  useOrchestRateStep(
+    'scroll-end',
+    async () => scrollTo(document.body.scrollHeight),
+    { priority: 40 },
+  );
+  return null;
 }
 ```
 
@@ -88,35 +90,58 @@ function MyComponent() {
 
 ### `OrchestRateProvider`
 
-A context provider component that should wrap your app or the part of your app that uses OrchestRate.
+| Prop | Tipo | Default | Descrizione |
+|------|------|---------|-------------|
+| `debug` | `boolean` | `false` | Log in console |
+| `autoExecute` | `boolean` | `false` | Esegue tutti i passi registrati al mount |
+| `autoExecuteDelay` | `number` | `0` | Ritardo prima di `autoExecute` (ms) |
 
-Props:
+### `useOrchestRate()`
 
-- `children`: React nodes
-- `debug` (optional): Boolean to enable debug logging
+Restituisce `{ orchestrate, execute, cancel, isPerforming }`.
 
-### `useOrchestRate`
+- **`orchestrate(id, effect, options?)`** — registra un passo
+- **`execute()`** — esegue tutti i passi per priorità (decrescente), restituisce i risultati
+- **`cancel(id)`** — rimuove un passo dalla registrazione
 
-A hook that returns an object with the following methods:
+### `useOrchestRateStep(id, effect, options?)`
 
-- `orchestrate(id: string, effect: Function, options?: Object)`: Adds an effect to the queue
-- `execute(): Promise<Object>`: Executes all queued effects
-- `cancel(id: string)`: Cancels a specific effect
+Registra un passo al mount e lo cancella allo smontaggio. Opzioni:
 
-### `useOrchestRateEffect`
+| Opzione | Default | Descrizione |
+|---------|---------|-------------|
+| `priority` | `0` | Priorità più alta = eseguito prima |
+| `preDelay` | `0` | Attesa prima dell'effetto (ms) |
+| `postDelay` | `0` | Attesa dopo l'effetto (ms) |
+| `timeout` | — | Timeout massimo (ms) |
+| `autoExecute` | `false` | Esegue subito dopo la registrazione |
 
-A hook that combines `orchestrate` and `execute` for simpler use cases.
+### `EffectContext`
 
-Parameters:
+Ogni effetto riceve un contesto con i risultati dei passi già eseguiti:
 
-- `id: string`: Unique identifier for the effect
-- `effect: Function`: The effect to be executed
-- `options?: Object`: Additional options (priority, preDelay, postDelay, timeout)
+```ts
+async ({ results, get }) => {
+  const prev = get<MyType>('step-id');
+}
+```
 
-## License
+### Helper (opzionali)
+
+- `scrollTo(top, options?)` — scroll finestra con attesa animazione
+- `scrollIntoView(selector, options?)` — scroll a elemento
+- `fetchJson<T>(url)` — fetch JSON tipizzato
+
+## Sviluppo
+
+```bash
+npm install
+npm run dev      # demo locale
+npm run build    # build libreria (dist/)
+npm run test:run # test
+npm run lint     # biome
+```
+
+## Licenza
 
 MIT
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
