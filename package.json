@@ -1,6 +1,6 @@
 {
   "name": "react-orchestrate",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Lightweight React library for choreographing page flows: scroll, fetch, update UI — in order.",
   "type": "module",
   "license": "MIT",

@@ -1,16 +1,21 @@
 import { useState } from "react";
-import { OrchestRateProvider, scrollIntoView, scrollTo, useOrchestRate } from "../lib";
+import { OrchestRateProvider, useOrchestRate, useOrchestRateProgress } from "../lib";
 import "./demo.css";
 import { PerfectDemoPage } from "./PerfectDemoPage";
 import { TourProgressProvider, useTourProgress } from "./tour-progress";
 
 function StepTimeline() {
   const { steps } = useTourProgress();
-  const { isPerforming } = useOrchestRate();
+  const { isPerforming, abort } = useOrchestRate();
+  const progress = useOrchestRateProgress();
 
   return (
     <aside className="timeline" aria-label="Progresso coreografia">
-      <p className="timeline-title">Coreografia in corso</p>
+      <p className="timeline-title">Coreografia v2</p>
+      <div className="progress-bar" aria-hidden>
+        <div className="progress-bar-fill" style={{ width: `${progress.percent}%` }} />
+      </div>
+      <p className="progress-percent">{progress.percent}%</p>
       <ol className="timeline-list">
         {steps.map((step, index) => (
           <li
@@ -24,6 +29,11 @@ function StepTimeline() {
           </li>
         ))}
       </ol>
+      {isPerforming && (
+        <button type="button" className="btn btn-abort" onClick={() => abort()}>
+          Interrompi
+        </button>
+      )}
       {isPerforming && (
         <p className="timeline-hint">Non scrollare — sta guidando la pagina</p>
       )}

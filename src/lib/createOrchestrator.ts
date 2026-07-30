@@ -1,53 +1,61 @@
+import { runStepItem } from "./internal/runStep";
+import {
+  buildExecutionWaves,
+  detectCycle,
+  getNextWave,
+  usesDependencyGraph,
+  validateDependencies,
+} from "./internal/schedule";
+import { hasPersisted, markPersisted, persistKey } from "./internal/storage";
+import { waitForViewport } from "./internal/wait";
 import type {
-  EffectContext,
+  CreateOrchestratorOptions,
   EffectFunction,
+  EffectResult,
   OrchestrateOptions,
   OrchestrationItem,
   OrchestrationResults,
+  OrchestRateProgress,
+  StepSkipResult,
 } from "./types";
+import { SKIP_MARKER } from "./types";
 
-const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
-  new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
-      return;
-    }
+const DEFAULT_PIPELINE = "default";
 
-    const timer = setTimeout(resolve, ms);
-    signal?.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
-      },
-      { once: true },
-    );
-  });
+const emptyProgress = (): OrchestRateProgress => ({
+  isPerforming: false,
+  currentStep: null,
+  completed: [],
+  skipped: [],
+  errored: [],
+  total: 0,
+  percent: 0,
+});
 
-const runWithTimeout = async (
-  effect: EffectFunction,
-  context: EffectContext,
-  timeout: number | undefined,
-  signal: AbortSignal,
-): Promise<unknown> => {
-  if (!timeout) {
-    return effect(context);
-  }
-
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error(`Effect timed out after ${timeout}ms`)),
-      timeout,
-    );
-    signal.addEventListener("abort", () => clearTimeout(timer), { once: true });
-  });
-
-  try {
-    return await Promise.race([Promise.resolve(effect(context)), timeoutPromise]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
+const normalizeOptions = (
+  options: OrchestrateOptions = {},
+  defaultPipeline: string,
+): OrchestrationItem => {
+  const id = ""; // filled by caller
+  return {
+    id,
+    pipeline: options.pipeline ?? defaultPipeline,
+    effect: (() => undefined) as EffectFunction,
+    priority: options.priority ?? 0,
+    phase: options.phase ?? 0,
+    after: options.after ?? [],
+    preDelay: options.preDelay ?? 0,
+    postDelay: options.postDelay ?? 0,
+    timeout: options.timeout,
+    when: options.when,
+    skipReason: options.skipReason,
+    retry: options.retry ?? 0,
+    retryDelay: options.retryDelay ?? 0,
+    once: options.once ?? false,
+    persist: options.persist,
+    waitFor: options.waitFor,
+    trigger: options.trigger ?? "mount",
+  };
 };
 
 export interface Orchestrator {
@@ -56,17 +64,25 @@ export interface Orchestrator {
     effect: EffectFunction,
     options?: OrchestrateOptions,
   ) => void;
-  execute: () => Promise<OrchestrationResults>;
-  cancel: (id: string) => void;
+  execute: (pipeline?: string) => Promise<OrchestrationResults>;
+  cancel: (id: string, pipeline?: string) => void;
+  abort: () => void;
+  clearPersisted: (id: string, pipeline?: string) => void;
   readonly isPerforming: boolean;
+  getProgress: () => OrchestRateProgress;
   dispose: () => void;
 }
 
-export const createOrchestrator = (debug = false): Orchestrator => {
-  /** Registered steps persist across execute() calls for replay */
-  const registry = new Map<string, OrchestrationItem>();
+export const createOrchestrator = (
+  options: CreateOrchestratorOptions = {},
+): Orchestrator => {
+  const { debug = false, ...callbacks } = options;
+  const registry = new Map<string, Map<string, OrchestrationItem>>();
+  const ranOnce = new Set<string>();
   let performing = false;
+  let progress = emptyProgress();
   let pendingExecutions: Array<{
+    pipeline: string;
     resolve: (value: OrchestrationResults) => void;
     reject: (reason: unknown) => void;
   }> = [];
@@ -76,35 +92,170 @@ export const createOrchestrator = (debug = false): Orchestrator => {
     if (debug) console.log(`[OrchestRate] ${message}`);
   };
 
+  const pipelineRegistry = (pipeline: string): Map<string, OrchestrationItem> => {
+    let map = registry.get(pipeline);
+    if (!map) {
+      map = new Map();
+      registry.set(pipeline, map);
+    }
+    return map;
+  };
+
+  const stepKey = (pipeline: string, id: string) => `${pipeline}::${id}`;
+
+  const emitProgress = (patch: Partial<OrchestRateProgress>) => {
+    progress = { ...progress, ...patch };
+    const done =
+      progress.completed.length + progress.skipped.length + progress.errored.length;
+    progress.percent =
+      progress.total > 0 ? Math.round((done / progress.total) * 100) : 0;
+    callbacks.onProgress?.(progress);
+  };
+
   const orchestrate = (
     id: string,
     effect: EffectFunction,
-    options: OrchestrateOptions = {},
+    opts: OrchestrateOptions = {},
   ) => {
-    const { priority = 0, preDelay = 0, postDelay = 0, timeout } = options;
-
-    registry.set(id, {
-      id,
-      effect,
-      priority,
-      preDelay,
-      postDelay,
-      timeout,
-    });
-
-    log(`registered "${id}" (priority ${priority})`);
+    const base = normalizeOptions(opts, DEFAULT_PIPELINE);
+    const item: OrchestrationItem = { ...base, id, effect };
+    pipelineRegistry(item.pipeline).set(id, item);
+    log(`registered "${id}" [${item.pipeline}] phase=${item.phase} after=[${item.after.join(",")}]`);
   };
 
-  const cancel = (id: string) => {
-    if (registry.delete(id)) {
+  const cancel = (id: string, pipeline = DEFAULT_PIPELINE) => {
+    if (pipelineRegistry(pipeline).delete(id)) {
       log(`cancelled "${id}"`);
     }
   };
 
-  const runQueue = async (): Promise<OrchestrationResults> => {
-    if (registry.size === 0) {
-      log("execute called with empty queue");
+  const clearPersistedStep = (id: string, pipeline = DEFAULT_PIPELINE) => {
+    const item = pipelineRegistry(pipeline).get(id);
+    if (!item?.persist) return;
+    const key = persistKey(pipeline, id, item.persist);
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const shouldSkip = async (item: OrchestrationItem): Promise<StepSkipResult | null> => {
+    const key = stepKey(item.pipeline, item.id);
+
+    if (item.once && ranOnce.has(key)) {
+      return { [SKIP_MARKER]: true, reason: "once (session)" };
+    }
+
+    if (item.persist) {
+      const pKey = persistKey(item.pipeline, item.id, item.persist);
+      if (hasPersisted(pKey)) {
+        return { [SKIP_MARKER]: true, reason: "persisted" };
+      }
+    }
+
+    if (item.when) {
+      const ok = await item.when();
+      if (!ok) {
+        return {
+          [SKIP_MARKER]: true,
+          reason: item.skipReason ?? "when() returned false",
+        };
+      }
+    }
+
+    return null;
+  };
+
+  const runSingleItem = async (
+    item: OrchestrationItem,
+    results: OrchestrationResults,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (item.trigger === "viewport") {
+      const target =
+        typeof item.waitFor === "string"
+          ? item.waitFor
+          : item.waitFor
+            ? item.waitFor()
+            : document.querySelector(`#${item.id}`);
+      if (target) {
+        await waitForViewport(target, signal);
+      }
+    }
+
+    const skip = await shouldSkip(item);
+    if (skip) {
+      results[item.id] = skip;
+      callbacks.onStepSkip?.(item.id, skip.reason);
+      emitProgress({
+        currentStep: null,
+        skipped: [...progress.skipped, item.id],
+      });
+      log(`skipped "${item.id}": ${skip.reason}`);
+      return;
+    }
+
+    callbacks.onStepStart?.(item.id);
+    emitProgress({ currentStep: item.id });
+
+    const context = {
+      results,
+      get: <T>(stepId: string) => results[stepId] as T | undefined,
+      signal,
+    };
+
+    try {
+      const result = await runStepItem(item, context, signal);
+      results[item.id] = result as EffectResult;
+
+      const key = stepKey(item.pipeline, item.id);
+      if (item.once) ranOnce.add(key);
+      if (item.persist) {
+        markPersisted(persistKey(item.pipeline, item.id, item.persist));
+      }
+
+      callbacks.onStepComplete?.(item.id, result as EffectResult);
+      emitProgress({
+        currentStep: null,
+        completed: [...progress.completed, item.id],
+      });
+      log(`done "${item.id}"`);
+    } catch (error) {
+      if (signal.aborted) return;
+      const message = error instanceof Error ? error.message : String(error);
+      results[item.id] = { error: message };
+      callbacks.onStepError?.(item.id, message);
+      emitProgress({
+        currentStep: null,
+        errored: [...progress.errored, item.id],
+      });
+      log(`error "${item.id}": ${message}`);
+    }
+
+    if (item.postDelay > 0 && !signal.aborted) {
+      await new Promise((r) => setTimeout(r, item.postDelay));
+    }
+  };
+
+  const runWave = async (
+    wave: OrchestrationItem[],
+    results: OrchestrationResults,
+    signal: AbortSignal,
+  ) => {
+    await Promise.all(wave.map((item) => runSingleItem(item, results, signal)));
+  };
+
+  const runPipeline = async (pipeline: string): Promise<OrchestrationResults> => {
+    const items = [...pipelineRegistry(pipeline).values()];
+    if (items.length === 0) {
+      log(`execute: empty pipeline "${pipeline}"`);
       return {};
+    }
+
+    validateDependencies(items);
+    if (detectCycle(items)) {
+      throw new Error(`Circular dependency detected in pipeline "${pipeline}"`);
     }
 
     performing = true;
@@ -112,68 +263,65 @@ export const createOrchestrator = (debug = false): Orchestrator => {
     const signal = abortController.signal;
     const results: OrchestrationResults = {};
 
-    const contextFor = (): EffectContext => ({
-      results,
-      get: <T>(id: string) => results[id] as T | undefined,
-    });
+    progress = {
+      isPerforming: true,
+      currentStep: null,
+      completed: [],
+      skipped: [],
+      errored: [],
+      total: items.length,
+      percent: 0,
+    };
+    emitProgress({});
 
-    const sorted = [...registry.values()].sort((a, b) => b.priority - a.priority);
-    log(
-      `executing: ${sorted.map((item) => `${item.id}(${item.priority})`).join(" → ")}`,
-    );
+    const dagMode = usesDependencyGraph(items);
 
-    for (const item of sorted) {
-      if (signal.aborted) break;
+    if (dagMode) {
+      const pending = new Map(items.map((i) => [i.id, i]));
+      const finished = new Set<string>();
 
-      log(`start "${item.id}"`);
-      const startedAt = performance.now();
-
-      if (item.preDelay > 0) {
-        await sleep(item.preDelay, signal);
+      while (pending.size > 0 && !signal.aborted) {
+        const wave = getNextWave(pending, finished);
+        if (wave.length === 0) {
+          throw new Error(`Unresolved dependencies in pipeline "${pipeline}"`);
+        }
+        for (const item of wave) pending.delete(item.id);
+        await runWave(wave, results, signal);
+        for (const item of wave) finished.add(item.id);
       }
-
-      try {
-        results[item.id] = await runWithTimeout(
-          item.effect,
-          contextFor(),
-          item.timeout,
-          signal,
-        );
-        log(`done "${item.id}" in ${(performance.now() - startedAt).toFixed(0)}ms`);
-      } catch (error) {
+    } else {
+      const waves = buildExecutionWaves(items);
+      for (const wave of waves) {
         if (signal.aborted) break;
-        const message = error instanceof Error ? error.message : String(error);
-        results[item.id] = { error: message };
-        log(`error "${item.id}": ${message}`);
-      }
-
-      if (item.postDelay > 0 && !signal.aborted) {
-        await sleep(item.postDelay, signal);
+        await runWave(wave, results, signal);
       }
     }
 
     performing = false;
     abortController = null;
-    log("orchestration complete");
+    progress = { ...progress, isPerforming: false, currentStep: null, percent: 100 };
+    emitProgress({});
+    callbacks.onComplete?.(results);
+    log(`pipeline "${pipeline}" complete`);
 
     return results;
   };
 
-  const execute = async (): Promise<OrchestrationResults> => {
+  const execute = async (pipeline = DEFAULT_PIPELINE): Promise<OrchestrationResults> => {
     if (performing) {
       log("queueing execute while run in progress");
       return new Promise<OrchestrationResults>((resolve, reject) => {
-        pendingExecutions.push({ resolve, reject });
+        pendingExecutions.push({ pipeline, resolve, reject });
       });
     }
 
     try {
-      const results = await runQueue();
+      const results = await runPipeline(pipeline);
 
       if (pendingExecutions.length > 0) {
         const next = pendingExecutions.shift();
         if (next) {
-          execute().then(next.resolve).catch(next.reject);
+          execute(next.pipeline).then(next.resolve).catch(next.reject);
         }
       }
 
@@ -181,22 +329,34 @@ export const createOrchestrator = (debug = false): Orchestrator => {
     } catch (error) {
       performing = false;
       abortController = null;
+      progress = { ...progress, isPerforming: false };
+      emitProgress({});
       throw error;
     }
   };
 
-  const dispose = () => {
+  const abort = () => {
     abortController?.abort();
+    log("aborted");
+  };
+
+  const dispose = () => {
+    abort();
     registry.clear();
     pendingExecutions = [];
     performing = false;
+    ranOnce.clear();
+    progress = emptyProgress();
   };
 
   return {
     orchestrate,
     execute,
     cancel,
+    abort,
+    clearPersisted: clearPersistedStep,
     dispose,
+    getProgress: () => progress,
     get isPerforming() {
       return performing;
     },

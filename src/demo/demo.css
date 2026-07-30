@@ -127,6 +127,40 @@ code {
   font-family: system-ui, sans-serif;
 }
 
+.progress-bar {
+  height: 4px;
+  background: var(--bg-card);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 0.35rem;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.progress-percent {
+  font-family: system-ui, sans-serif;
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin: 0 0 1rem;
+}
+
+.btn-abort {
+  margin-top: 0.75rem;
+  width: 100%;
+  background: transparent;
+  border: 1px solid rgba(232, 100, 100, 0.5);
+  color: #e86464;
+  padding: 0.45rem;
+  font-family: system-ui, sans-serif;
+  font-size: 0.8rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
 /* ── Hero ── */
 
 .hero {

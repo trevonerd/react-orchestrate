@@ -5,7 +5,6 @@ import { useTourStep } from "./tour-progress";
 interface UserProfile {
   id: number;
   name: string;
-  company: { catchPhrase: string };
 }
 
 interface Product {
@@ -13,7 +12,6 @@ interface Product {
   title: string;
 }
 
-/** Step 1 — vive nel layout hero, scroll verso il catalogo */
 export function HeroScrollStep() {
   useTourStep(
     "scroll-catalog",
@@ -22,12 +20,12 @@ export function HeroScrollStep() {
       await scrollIntoView("#catalog", { settleMs: 500 });
       return { target: "catalog" };
     },
-    { priority: 100, preDelay: 300 },
+    { phase: 1, preDelay: 300 },
   );
   return null;
 }
 
-/** Step 2 — vive nel ProductGrid, fetch indipendente */
+/** Phase 2 — fetch in parallelo (stessa fase) */
 export function ProductFetchStep({
   onLoading,
 }: {
@@ -35,7 +33,7 @@ export function ProductFetchStep({
 }) {
   useTourStep(
     "fetch-products",
-    "Carica prodotti dall'API",
+    "Carica prodotti (parallelo)",
     async () => {
       onLoading(true);
       const products = await fetch(
@@ -47,12 +45,27 @@ export function ProductFetchStep({
       onLoading(false);
       return products;
     },
-    { priority: 80 },
+    { phase: 2 },
   );
   return null;
 }
 
-/** Step 3 — stesso componente del grid, usa risultato del fetch */
+export function ProfileFetchStep() {
+  useTourStep(
+    "fetch-profile",
+    "Carica profilo (parallelo)",
+    async () => {
+      return fetch("https://jsonplaceholder.typicode.com/users/1").then((r) => {
+        if (!r.ok) throw new Error("API error");
+        return r.json() as Promise<UserProfile>;
+      });
+    },
+    { phase: 2 },
+  );
+  return null;
+}
+
+/** Dipendenze esplicite con `after` */
 export function ProductRevealStep({
   onHighlight,
 }: {
@@ -60,40 +73,20 @@ export function ProductRevealStep({
 }) {
   useTourStep(
     "reveal-product",
-    "Evidenzia prodotto in evidenza",
+    "Evidenzia prodotto",
     async ({ get }) => {
       const products = get<Product[]>("fetch-products");
       const featured = products?.[0];
       if (!featured) throw new Error("Nessun prodotto");
       onHighlight(featured.title);
-      await new Promise((r) => setTimeout(r, 400));
+      await new Promise((r) => setTimeout(r, 300));
       return { featuredId: featured.id };
     },
-    { priority: 70 },
+    { after: ["fetch-products"] },
   );
   return null;
 }
 
-/** Step 4 — componente separato MessageBanner, fetch profilo utente */
-export function ProfileFetchStep() {
-  useTourStep(
-    "fetch-profile",
-    "Carica profilo utente",
-    async () => {
-      const profile = await fetch("https://jsonplaceholder.typicode.com/users/1").then(
-        (r) => {
-          if (!r.ok) throw new Error("API error");
-          return r.json() as Promise<UserProfile>;
-        },
-      );
-      return profile;
-    },
-    { priority: 60 },
-  );
-  return null;
-}
-
-/** Step 5 — MessageBanner aggiorna messaggio con dati da step precedenti */
 export function PersonalizedMessageStep({
   onMessage,
 }: {
@@ -101,31 +94,29 @@ export function PersonalizedMessageStep({
 }) {
   useTourStep(
     "personalize-message",
-    "Messaggio personalizzato",
+    "Messaggio con get() tipizzato",
     async ({ get }) => {
       const profile = get<UserProfile>("fetch-profile");
       const products = get<Product[]>("fetch-products");
       const name = profile?.name ?? "utente";
-      const count = products?.length ?? 0;
-      const text = `Ciao ${name.split(" ")[0]}! Abbiamo selezionato ${count} prodotti per te.`;
+      const text = `Ciao ${name.split(" ")[0]}! ${products?.length ?? 0} prodotti pronti.`;
       onMessage(text);
       return { text };
     },
-    { priority: 50, postDelay: 400 },
+    { after: ["fetch-profile", "fetch-products"], postDelay: 300 },
   );
   return null;
 }
 
-/** Step 6 — CtaSection, scroll finale */
 export function CtaScrollStep() {
   useTourStep(
     "scroll-cta",
-    "Scroll alla call-to-action",
+    "Scroll alla CTA",
     async () => {
       await scrollIntoView("#cta", { settleMs: 600 });
       return { target: "cta" };
     },
-    { priority: 40, preDelay: 200 },
+    { phase: 4, preDelay: 200 },
   );
   return null;
 }
@@ -140,7 +131,7 @@ export function ProductGrid() {
       <ProductRevealStep onHighlight={setHighlight} />
 
       <header className="section-header">
-        <p className="eyebrow">Catalogo</p>
+        <p className="eyebrow">Catalogo · phase 2 parallelo</p>
         <h2>Prodotti consigliati</h2>
       </header>
 
@@ -155,7 +146,7 @@ export function ProductGrid() {
             ) : (
               <>
                 <h3>{n === 1 && highlight ? highlight : `Prodotto ${n}`}</h3>
-                <p>Caricato e orchestrato da componenti separati.</p>
+                <p>Fetch parallelo + reveal con after[]</p>
               </>
             )}
           </article>
@@ -185,11 +176,14 @@ export function CtaSection() {
   return (
     <section className="cta" id="cta">
       <CtaScrollStep />
-      <h2>Pronto a provarlo nel tuo progetto?</h2>
-      <p>Tre righe per registrare un passo. Un provider. Zero dipendenze runtime.</p>
+      <h2>v2.0 — after, phase, abort, progress</h2>
+      <p>Due API in parallelo (phase 2), poi messaggio con after[], poi scroll.</p>
       <code className="code-snippet">
-        useOrchestRateStep(&apos;scroll&apos;, async () =&gt; scrollTo(400), {"{"}{" "}
-        priority: 100 {"}"})
+        {`useOrchestRateStep('msg', effect, {
+  after: ['fetch-a', 'fetch-b'],
+  retry: 2,
+  when: () => !done,
+})`}
       </code>
     </section>
   );
@@ -201,25 +195,20 @@ export function PerfectDemoPage() {
       <HeroScrollStep />
 
       <header className="hero">
-        <p className="eyebrow">OrchestRate · demo perfetta</p>
-        <h1>Onboarding guidato in 6 passi</h1>
+        <p className="eyebrow">OrchestRate v2</p>
+        <h1>Onboarding guidato, fatto bene</h1>
         <p className="lead">
-          Apri la pagina e guarda: scroll automatico, due fetch API da componenti
-          diversi, messaggio personalizzato, scroll finale. Ogni blocco registra il
-          proprio passo — nessun mega-<code>useEffect</code> centrale.
+          Scroll → <strong>2 API in parallelo</strong> → highlight → messaggio con{" "}
+          <code>after[]</code> → scroll CTA. Ogni componente registra il suo passo.
         </p>
         <div className="hero-flow">
-          <span>Scroll</span>
+          <span>phase 1 · scroll</span>
           <span aria-hidden>→</span>
-          <span>API prodotti</span>
+          <span>phase 2 · API ×2 ∥</span>
           <span aria-hidden>→</span>
-          <span>Highlight</span>
+          <span>after · reveal + msg</span>
           <span aria-hidden>→</span>
-          <span>API profilo</span>
-          <span aria-hidden>→</span>
-          <span>Messaggio</span>
-          <span aria-hidden>→</span>
-          <span>CTA</span>
+          <span>phase 4 · CTA</span>
         </div>
       </header>
 

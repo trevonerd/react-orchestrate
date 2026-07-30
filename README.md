@@ -1,19 +1,8 @@
-# OrchestRate
+# OrchestRate v2
 
-Orchestra flussi di pagina in React con semplicità: scroll, fetch API, aggiornamento UI — nell'ordine che decidi tu.
+Orchestra flussi di pagina in React: scroll, fetch paralleli, messaggi, CTA — con dipendenze, fasi, retry e progress.
 
-**Zero dipendenze runtime.** Compatibile con React 18 e 19.
-
-## Il problema
-
-Hai una pagina dove, all'apertura, vuoi:
-
-1. Scorrere fino a una sezione
-2. Caricare un'API
-3. Aggiornare un messaggio in base alla risposta
-4. Scorrere di nuovo
-
-Con `useEffect` sparsi nei componenti perdi il controllo sull'ordine. Con XState o redux-saga è overkill. **OrchestRate** è il mezzo: registri i passi, li esegui in ordine di priorità.
+**~8 KB ESM · Zero dipendenze runtime · React 18 & 19**
 
 ## Installazione
 
@@ -21,125 +10,93 @@ Con `useEffect` sparsi nei componenti perdi il controllo sull'ordine. Con XState
 npm install react-orchestrate
 ```
 
-## Uso rapido
+## Quick start
 
 ```tsx
-import {
-  OrchestRateProvider,
-  scrollIntoView,
-  scrollTo,
-  useOrchestRateStep,
-} from 'react-orchestrate';
-
-function App() {
-  return (
-    <OrchestRateProvider autoExecute autoExecuteDelay={300}>
-      <ScrollStep />
-      <FetchStep />
-      <MessageStep />
-      <FinalScrollStep />
-    </OrchestRateProvider>
-  );
-}
-
-function ScrollStep() {
-  useOrchestRateStep(
-    'scroll-intro',
-    async () => scrollIntoView('#content'),
-    { priority: 100 },
-  );
-  return null;
-}
-
-function FetchStep() {
-  useOrchestRateStep(
-    'fetch-data',
-    async () => {
-      const res = await fetch('/api/quote');
-      return res.json();
-    },
-    { priority: 80 },
-  );
-  return null;
-}
-
-function MessageStep() {
-  const [msg, setMsg] = useState('');
-  useOrchestRateStep(
-    'show-message',
-    async ({ get }) => {
-      const data = get<{ title: string }>('fetch-data');
-      setMsg(data?.title ?? '');
-    },
-    { priority: 60 },
-  );
-  return <p>{msg}</p>;
-}
-
-function FinalScrollStep() {
-  useOrchestRateStep(
-    'scroll-end',
-    async () => scrollTo(document.body.scrollHeight),
-    { priority: 40 },
-  );
-  return null;
-}
+<OrchestRateProvider autoExecute>
+  <ScrollStep />
+  <FetchStep />
+  <MessageStep />
+</OrchestRateProvider>
 ```
 
-## API
+## API v2
 
-### `OrchestRateProvider`
+### Opzioni step (`useOrchestRateStep` / `orchestrate`)
 
-| Prop | Tipo | Default | Descrizione |
-|------|------|---------|-------------|
-| `debug` | `boolean` | `false` | Log in console |
-| `autoExecute` | `boolean` | `false` | Esegue tutti i passi registrati al mount |
-| `autoExecuteDelay` | `number` | `0` | Ritardo prima di `autoExecute` (ms) |
+| Opzione | Descrizione |
+|---------|-------------|
+| `after: string[]` | Dipendenze esplicite — esegue quando i passi sono completati |
+| `phase: number` | Stessa fase = esecuzione **parallela** |
+| `priority: number` | Ordine sequenziale (fallback senza `after`/`phase`) |
+| `when: () => boolean` | Salta se false |
+| `once: true` | Una volta per sessione |
+| `persist: true \| string` | Salva completamento in localStorage |
+| `retry` / `retryDelay` | Ritenta su errore |
+| `waitFor: string` | Attende elemento DOM |
+| `trigger: 'viewport'` | Registra quando elemento è visibile |
+| `timeout` / `preDelay` / `postDelay` | Timing |
 
-### `useOrchestRate()`
+### Provider
 
-Restituisce `{ orchestrate, execute, cancel, isPerforming }`.
+```tsx
+<OrchestRateProvider
+  autoExecute
+  debug
+  onStepStart={(id) => analytics.track(id)}
+  onComplete={(results) => console.log(results)}
+>
+```
 
-- **`orchestrate(id, effect, options?)`** — registra un passo
-- **`execute()`** — esegue tutti i passi per priorità (decrescente), restituisce i risultati
-- **`cancel(id)`** — rimuove un passo dalla registrazione
+### Hooks
 
-### `useOrchestRateStep(id, effect, options?)`
+- `useOrchestRate()` → `{ orchestrate, execute, cancel, abort, isPerforming, progress }`
+- `useOrchestRateProgress()` → `{ percent, currentStep, completed, skipped, errored }`
+- `useOrchestRateStep(id, effect, options)`
 
-Registra un passo al mount e lo cancella allo smontaggio. Opzioni:
-
-| Opzione | Default | Descrizione |
-|---------|---------|-------------|
-| `priority` | `0` | Priorità più alta = eseguito prima |
-| `preDelay` | `0` | Attesa prima dell'effetto (ms) |
-| `postDelay` | `0` | Attesa dopo l'effetto (ms) |
-| `timeout` | — | Timeout massimo (ms) |
-| `autoExecute` | `false` | Esegue subito dopo la registrazione |
-
-### `EffectContext`
-
-Ogni effetto riceve un contesto con i risultati dei passi già eseguiti:
+### Effect context
 
 ```ts
-async ({ results, get }) => {
-  const prev = get<MyType>('step-id');
+async ({ get, results, signal }) => {
+  const data = get<MyType>('fetch-step');
+  signal.aborted; // true se abort()
 }
 ```
 
-### Helper (opzionali)
+### Typed pipeline
 
-- `scrollTo(top, options?)` — scroll finestra con attesa animazione
-- `scrollIntoView(selector, options?)` — scroll a elemento
-- `fetchJson<T>(url)` — fetch JSON tipizzato
+```ts
+import { definePipeline, pipelineStep } from 'react-orchestrate';
+
+const tour = definePipeline({
+  fetch: async () => ({ name: 'Marco' }),
+  greet: async ({ get }) => `Ciao ${get('fetch')?.name}`,
+});
+```
+
+### Helper
+
+- `scrollTo`, `scrollIntoView`, `waitForElement`
+- `withViewTransition(fn)` — View Transition API
+- `fetchJson<T>(url)`
+
+## Recipes
+
+- [Onboarding SaaS](./docs/recipes/onboarding-saas.md)
+- [Landing narrativa](./docs/recipes/narrative-landing.md)
+- [Checkout wizard](./docs/recipes/checkout-wizard.md)
+
+## Quando NON usarlo
+
+Un solo `useEffect` con `async/await` basta se tutto il flusso è in un componente.  
+Per animazioni scroll avanzate → GSAP. Per rami complessi → XState.
 
 ## Sviluppo
 
 ```bash
-npm install
-npm run dev      # demo locale
-npm run build    # build libreria (dist/)
-npm run test:run # test
-npm run lint     # biome
+npm run dev
+npm run test:run
+npm run build
 ```
 
 ## Licenza
