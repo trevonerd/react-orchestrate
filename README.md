@@ -1,122 +1,121 @@
-# OrchestRate
+# OrchestRate v2
 
-🎼 OrchestRate: The Maestro of React Effects! 🎭
+Orchestra flussi di pagina in React: scroll, fetch paralleli, messaggi, CTA — con dipendenze, fasi, retry e progress.
 
-OrchestRate is a React library for orchestrating and executing effects with priorities and delays. It provides a simple way to manage complex sequences of asynchronous operations in your React applications.
+**~8 KB ESM · Zero dipendenze runtime · React 18 & 19**
 
-## Installation
+## Live demo
+
+**https://trevonerd.github.io/react-orchestrate/**
+
+(GitHub Pages — enable under **Settings → Pages → Source: GitHub Actions** after merging to `main`.)
+
+## Installazione
 
 ```bash
-npm install orchestrate
+npm install react-orchestrate
 ```
 
-or
+## Quick start
+
+```tsx
+<OrchestRateProvider autoExecute>
+  <ScrollStep />
+  <FetchStep />
+  <MessageStep />
+</OrchestRateProvider>
+```
+
+## API v2
+
+### Opzioni step (`useOrchestRateStep` / `orchestrate`)
+
+| Opzione | Descrizione |
+|---------|-------------|
+| `after: string[]` | Dipendenze esplicite — esegue quando i passi sono completati |
+| `phase: number` | Stessa fase = esecuzione **parallela** |
+| `priority: number` | Ordine sequenziale (fallback senza `after`/`phase`) |
+| `when: () => boolean` | Salta se false |
+| `once: true` | Una volta per sessione |
+| `persist: true \| string` | Salva completamento in localStorage |
+| `retry` / `retryDelay` | Ritenta su errore |
+| `waitFor: string` | Attende elemento DOM |
+| `trigger: 'viewport'` | Registra quando elemento è visibile |
+| `timeout` / `preDelay` / `postDelay` | Timing |
+
+### Provider
+
+```tsx
+<OrchestRateProvider
+  autoExecute
+  debug
+  onStepStart={(id) => analytics.track(id)}
+  onComplete={(results) => console.log(results)}
+>
+```
+
+### Hooks
+
+- `useOrchestRate()` → `{ orchestrate, execute, cancel, abort, isPerforming, progress }`
+- `useOrchestRateProgress()` → `{ percent, currentStep, completed, skipped, errored }`
+- `useOrchestRateStep(id, effect, options)`
+
+### Effect context
+
+```ts
+async ({ get, results, signal }) => {
+  const data = get<MyType>('fetch-step');
+  signal.aborted; // true se abort()
+}
+```
+
+### Typed pipeline
+
+```ts
+import { definePipeline, pipelineStep } from 'react-orchestrate';
+
+const tour = definePipeline({
+  fetch: async () => ({ name: 'Marco' }),
+  greet: async ({ get }) => `Ciao ${get('fetch')?.name}`,
+});
+```
+
+### Helper
+
+- `scrollTo`, `scrollIntoView`, `waitForElement`
+- `withViewTransition(fn)` — View Transition API
+- `fetchJson<T>(url)`
+
+## Recipes
+
+- [Onboarding SaaS](./docs/recipes/onboarding-saas.md)
+- [Landing narrativa](./docs/recipes/narrative-landing.md)
+- [Checkout wizard](./docs/recipes/checkout-wizard.md)
+
+## Quando NON usarlo
+
+Un solo `useEffect` con `async/await` basta se tutto il flusso è in un componente.  
+Per animazioni scroll avanzate → GSAP. Per rami complessi → XState.
+
+## Sviluppo
 
 ```bash
-yarn add orchestrate
+npm run dev          # http://localhost:5173
+npm run build:demo   # static demo → demo-dist/
+npm run test:run
+npm run build        # library → dist/
 ```
 
-## Features
+### GitHub Pages
 
-- Orchestrate multiple effects with different priorities
-- Add pre and post delays to effects
-- Set timeouts for effect execution
-- Cancel specific effects
-- Debug mode for detailed logging
+Push to `main` triggers `.github/workflows/deploy-demo.yml`. Then enable **Settings → Pages → GitHub Actions**.
 
-## Usage
+Preview with the same base path as production:
 
-### Basic Setup
-
-Wrap your app or a part of it with the `OrchestRateProvider`:
-
-```jsx
-import { OrchestRateProvider } from 'orchestrate';
-
-function App() {
-  return (
-    <OrchestRateProvider>
-      {/* Your app components */}
-    </OrchestRateProvider>
-  );
-}
+```bash
+GITHUB_PAGES=true npm run build:demo && npm run preview
 ```
 
-### Using the Hook
-
-Use the `useOrchestRate` hook to access the orchestration functions:
-
-```jsx
-import { useOrchestRate } from 'orchestrate';
-
-function MyComponent() {
-  const { orchestrate, execute, cancel } = useOrchestRate();
-
-  const handleClick = () => {
-    orchestrate('effect1', async () => {
-      // Your effect logic here
-    }, { priority: 1 });
-
-    orchestrate('effect2', async () => {
-      // Another effect
-    }, { priority: 2, preDelay: 1000 });
-
-    execute();
-  };
-
-  return <button onClick={handleClick}>Run Effects</button>;
-}
-```
-
-### Using the Effect Hook
-
-For simpler cases, you can use the `useOrchestRateEffect` hook:
-
-```jsx
-import { useOrchestRateEffect } from 'orchestrate';
-
-function MyComponent() {
-  useOrchestRateEffect('myEffect', async () => {
-    // Your effect logic here
-  }, { priority: 1 });
-
-  return <div>Effect will run on mount</div>;
-}
-```
-
-## API
-
-### `OrchestRateProvider`
-
-A context provider component that should wrap your app or the part of your app that uses OrchestRate.
-
-Props:
-
-- `children`: React nodes
-- `debug` (optional): Boolean to enable debug logging
-
-### `useOrchestRate`
-
-A hook that returns an object with the following methods:
-
-- `orchestrate(id: string, effect: Function, options?: Object)`: Adds an effect to the queue
-- `execute(): Promise<Object>`: Executes all queued effects
-- `cancel(id: string)`: Cancels a specific effect
-
-### `useOrchestRateEffect`
-
-A hook that combines `orchestrate` and `execute` for simpler use cases.
-
-Parameters:
-
-- `id: string`: Unique identifier for the effect
-- `effect: Function`: The effect to be executed
-- `options?: Object`: Additional options (priority, preDelay, postDelay, timeout)
-
-## License
+## Licenza
 
 MIT
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
