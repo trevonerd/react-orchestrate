@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { OrchestRateProvider, useOrchestRate, useOrchestRateProgress } from "../lib";
+import { DEMO_PACE } from "./demo-pace";
 import "./demo.css";
 import { PerfectDemoPage } from "./PerfectDemoPage";
 import { TourProgressProvider, useTourProgress } from "./tour-progress";
@@ -152,7 +153,7 @@ function AlternativesPanel() {
 
 export function PerfectDemo() {
   return (
-    <OrchestRateProvider autoExecute autoExecuteDelay={500}>
+    <OrchestRateProvider autoExecute autoExecuteDelay={DEMO_PACE.autoStartMs}>
       <TourProgressProvider>
         <StepTimeline />
         <PerfectDemoPage />
