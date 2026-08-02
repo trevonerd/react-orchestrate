@@ -4,6 +4,12 @@ Orchestra flussi di pagina in React: scroll, fetch paralleli, messaggi, CTA — 
 
 **~8 KB ESM · Zero dipendenze runtime · React 18 & 19**
 
+## Live demo
+
+**https://trevonerd.github.io/react-orchestrate/**
+
+(GitHub Pages — enable under **Settings → Pages → Source: GitHub Actions** after merging to `main`.)
+
 ## Installazione
 
 ```bash
@@ -94,9 +100,20 @@ Per animazioni scroll avanzate → GSAP. Per rami complessi → XState.
 ## Sviluppo
 
 ```bash
-npm run dev
+npm run dev          # http://localhost:5173
+npm run build:demo   # static demo → demo-dist/
 npm run test:run
-npm run build
+npm run build        # library → dist/
+```
+
+### GitHub Pages
+
+Push to `main` triggers `.github/workflows/deploy-demo.yml`. Then enable **Settings → Pages → GitHub Actions**.
+
+Preview with the same base path as production:
+
+```bash
+GITHUB_PAGES=true npm run build:demo && npm run preview
 ```
 
 ## Licenza
