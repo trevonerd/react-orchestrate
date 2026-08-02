@@ -138,7 +138,7 @@ code {
 .progress-bar-fill {
   height: 100%;
   background: var(--accent);
-  transition: width 0.3s ease;
+  transition: width 0.6s ease;
 }
 
 .progress-percent {
@@ -242,7 +242,7 @@ code {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 1.25rem;
-  transition: border-color 0.4s, box-shadow 0.4s;
+  transition: border-color 0.8s ease, box-shadow 0.8s ease, transform 0.8s ease;
 }
 
 .product-card h3 {

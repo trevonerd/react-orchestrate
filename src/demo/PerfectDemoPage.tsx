@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { scrollIntoView } from "../lib";
+import { DEMO_PACE, withMinDuration } from "./demo-pace";
 import { useTourStep } from "./tour-progress";
 
 interface UserProfile {
@@ -17,10 +18,10 @@ export function HeroScrollStep() {
     "scroll-catalog",
     "Scroll to catalog section",
     async () => {
-      await scrollIntoView("#catalog", { settleMs: 500 });
+      await scrollIntoView("#catalog", { settleMs: DEMO_PACE.scrollSettleMs });
       return { target: "catalog" };
     },
-    { phase: 1, preDelay: 300 },
+    { phase: 1, preDelay: DEMO_PACE.pauseLongMs, postDelay: DEMO_PACE.pauseMediumMs },
   );
   return null;
 }
@@ -36,16 +37,17 @@ export function ProductFetchStep({
     "Load products (parallel)",
     async () => {
       onLoading(true);
-      const products = await fetch(
-        "https://jsonplaceholder.typicode.com/posts?_limit=3",
-      ).then((r) => {
-        if (!r.ok) throw new Error("API error");
-        return r.json() as Promise<Product[]>;
-      });
+      const products = await withMinDuration(
+        fetch("https://jsonplaceholder.typicode.com/posts?_limit=3").then((r) => {
+          if (!r.ok) throw new Error("API error");
+          return r.json() as Promise<Product[]>;
+        }),
+        DEMO_PACE.minLoadingMs,
+      );
       onLoading(false);
       return products;
     },
-    { phase: 2 },
+    { phase: 2, preDelay: DEMO_PACE.pauseShortMs, postDelay: DEMO_PACE.pauseMediumMs },
   );
   return null;
 }
@@ -55,12 +57,15 @@ export function ProfileFetchStep() {
     "fetch-profile",
     "Load profile (parallel)",
     async () => {
-      return fetch("https://jsonplaceholder.typicode.com/users/1").then((r) => {
-        if (!r.ok) throw new Error("API error");
-        return r.json() as Promise<UserProfile>;
-      });
+      return withMinDuration(
+        fetch("https://jsonplaceholder.typicode.com/users/1").then((r) => {
+          if (!r.ok) throw new Error("API error");
+          return r.json() as Promise<UserProfile>;
+        }),
+        DEMO_PACE.minLoadingMs,
+      );
     },
-    { phase: 2 },
+    { phase: 2, preDelay: DEMO_PACE.pauseShortMs, postDelay: DEMO_PACE.pauseMediumMs },
   );
   return null;
 }
@@ -79,10 +84,10 @@ export function ProductRevealStep({
       const featured = products?.[0];
       if (!featured) throw new Error("No products found");
       onHighlight(featured.title);
-      await new Promise((r) => setTimeout(r, 300));
+      await new Promise((r) => setTimeout(r, DEMO_PACE.revealHoldMs));
       return { featuredId: featured.id };
     },
-    { after: ["fetch-products"] },
+    { after: ["fetch-products"], preDelay: DEMO_PACE.pauseShortMs, postDelay: DEMO_PACE.pauseMediumMs },
   );
   return null;
 }
@@ -103,7 +108,11 @@ export function PersonalizedMessageStep({
       onMessage(text);
       return { text };
     },
-    { after: ["fetch-profile", "fetch-products"], postDelay: 300 },
+    {
+      after: ["fetch-profile", "fetch-products"],
+      preDelay: DEMO_PACE.pauseShortMs,
+      postDelay: DEMO_PACE.pauseLongMs,
+    },
   );
   return null;
 }
@@ -113,10 +122,10 @@ export function CtaScrollStep() {
     "scroll-cta",
     "Scroll to call-to-action",
     async () => {
-      await scrollIntoView("#cta", { settleMs: 600 });
+      await scrollIntoView("#cta", { settleMs: DEMO_PACE.scrollSettleMs });
       return { target: "cta" };
     },
-    { phase: 4, preDelay: 200 },
+    { phase: 4, preDelay: DEMO_PACE.pauseLongMs, postDelay: DEMO_PACE.pauseMediumMs },
   );
   return null;
 }
