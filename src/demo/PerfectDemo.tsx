@@ -10,8 +10,8 @@ function StepTimeline() {
   const progress = useOrchestRateProgress();
 
   return (
-    <aside className="timeline" aria-label="Progresso coreografia">
-      <p className="timeline-title">Coreografia v2</p>
+    <aside className="timeline" aria-label="Choreography progress">
+      <p className="timeline-title">Choreography v2</p>
       <div className="progress-bar" aria-hidden>
         <div className="progress-bar-fill" style={{ width: `${progress.percent}%` }} />
       </div>
@@ -31,11 +31,11 @@ function StepTimeline() {
       </ol>
       {isPerforming && (
         <button type="button" className="btn btn-abort" onClick={() => abort()}>
-          Interrompi
+          Stop
         </button>
       )}
       {isPerforming && (
-        <p className="timeline-hint">Non scrollare — sta guidando la pagina</p>
+        <p className="timeline-hint">Sit tight — the page is being guided</p>
       )}
     </aside>
   );
@@ -69,11 +69,11 @@ function ReplayBar() {
           execute().catch(console.error);
         }}
       >
-        {isPerforming ? "Guida in corso…" : "Rigioca la demo"}
+        {isPerforming ? "Running…" : "Replay demo"}
       </button>
       <p className="replay-hint">
-        Ogni componente registra il suo passo. Un solo <code>execute()</code> li
-        coordina.
+        Each component registers its step. One <code>execute()</code> coordinates them
+        all.
       </p>
     </div>
   );
@@ -90,58 +90,58 @@ function AlternativesPanel() {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
       >
-        {open ? "Nascondi" : "Quando usare OrchestRate vs alternative moderne"}
+        {open ? "Hide" : "When to use OrchestRate vs modern alternatives"}
       </button>
 
       {open && (
         <div className="alternatives-grid">
           <article className="alt-card alt-card--yes">
-            <h3>Usa OrchestRate</h3>
+            <h3>Use OrchestRate</h3>
             <ul>
-              <li>Più componenti fratelli contribuiscono allo stesso flusso</li>
-              <li>Onboarding guidato: scroll → dati → UI → scroll</li>
-              <li>Vuoi registrare passi al mount ed eseguire in batch</li>
-              <li>Priorità e delay tra step async</li>
+              <li>Multiple sibling components contribute to the same flow</li>
+              <li>Guided onboarding: scroll → data → UI → scroll</li>
+              <li>Register steps on mount, execute in batch</li>
+              <li>Priority, delays, and async step ordering</li>
             </ul>
           </article>
 
           <article className="alt-card">
-            <h3>Un solo useEffect + async/await</h3>
+            <h3>Single useEffect + async/await</h3>
             <p>
-              Più semplice se tutto il flusso vive in <strong>un componente</strong>.
-              Per 4 righe di sequenza, OrchestRate è overkill.
+              Simpler when the entire flow lives in <strong>one component</strong>. For
+              a short linear sequence, OrchestRate is overkill.
             </p>
           </article>
 
           <article className="alt-card">
             <h3>View Transitions (React canary)</h3>
             <p>
-              Ottimo per <strong>animazioni tra stati/pagine</strong>, non per sequenze
-              imperative scroll → fetch → messaggio.
+              Great for <strong>state/page animations</strong>, not for imperative
+              scroll → fetch → message sequences.
             </p>
           </article>
 
           <article className="alt-card">
             <h3>TanStack Query / Suspense</h3>
             <p>
-              Perfetti per <strong>caricare dati</strong>, non orchestrano scroll o
-              passi multipli tra componenti.
+              Perfect for <strong>loading data</strong>, not for orchestrating scroll or
+              multi-component step flows.
             </p>
           </article>
 
           <article className="alt-card">
             <h3>XState / state machine</h3>
             <p>
-              Meglio per flussi con <strong>ramificazioni</strong> (if/else, retry,
-              stati complessi). Più verboso.
+              Better for flows with <strong>branching</strong> (if/else, retry, complex
+              states). More verbose.
             </p>
           </article>
 
           <article className="alt-card">
             <h3>GSAP ScrollTrigger / CSS scroll-driven</h3>
             <p>
-              Standard per animazioni legate allo scroll. Non gestiscono fetch o
-              aggiornamento UI tra componenti.
+              Industry standard for scroll-linked animations. They do not handle fetch or
+              cross-component UI updates.
             </p>
           </article>
         </div>

@@ -15,7 +15,7 @@ interface Product {
 export function HeroScrollStep() {
   useTourStep(
     "scroll-catalog",
-    "Scroll alla sezione catalogo",
+    "Scroll to catalog section",
     async () => {
       await scrollIntoView("#catalog", { settleMs: 500 });
       return { target: "catalog" };
@@ -25,7 +25,7 @@ export function HeroScrollStep() {
   return null;
 }
 
-/** Phase 2 — fetch in parallelo (stessa fase) */
+/** Phase 2 — parallel fetches (same phase) */
 export function ProductFetchStep({
   onLoading,
 }: {
@@ -33,7 +33,7 @@ export function ProductFetchStep({
 }) {
   useTourStep(
     "fetch-products",
-    "Carica prodotti (parallelo)",
+    "Load products (parallel)",
     async () => {
       onLoading(true);
       const products = await fetch(
@@ -53,7 +53,7 @@ export function ProductFetchStep({
 export function ProfileFetchStep() {
   useTourStep(
     "fetch-profile",
-    "Carica profilo (parallelo)",
+    "Load profile (parallel)",
     async () => {
       return fetch("https://jsonplaceholder.typicode.com/users/1").then((r) => {
         if (!r.ok) throw new Error("API error");
@@ -65,7 +65,7 @@ export function ProfileFetchStep() {
   return null;
 }
 
-/** Dipendenze esplicite con `after` */
+/** Explicit dependencies via `after` */
 export function ProductRevealStep({
   onHighlight,
 }: {
@@ -73,11 +73,11 @@ export function ProductRevealStep({
 }) {
   useTourStep(
     "reveal-product",
-    "Evidenzia prodotto",
+    "Highlight featured product",
     async ({ get }) => {
       const products = get<Product[]>("fetch-products");
       const featured = products?.[0];
-      if (!featured) throw new Error("Nessun prodotto");
+      if (!featured) throw new Error("No products found");
       onHighlight(featured.title);
       await new Promise((r) => setTimeout(r, 300));
       return { featuredId: featured.id };
@@ -94,12 +94,12 @@ export function PersonalizedMessageStep({
 }) {
   useTourStep(
     "personalize-message",
-    "Messaggio con get() tipizzato",
+    "Personalized message via get()",
     async ({ get }) => {
       const profile = get<UserProfile>("fetch-profile");
       const products = get<Product[]>("fetch-products");
-      const name = profile?.name ?? "utente";
-      const text = `Ciao ${name.split(" ")[0]}! ${products?.length ?? 0} prodotti pronti.`;
+      const name = profile?.name ?? "there";
+      const text = `Hey ${name.split(" ")[0]}! ${products?.length ?? 0} products ready for you.`;
       onMessage(text);
       return { text };
     },
@@ -111,7 +111,7 @@ export function PersonalizedMessageStep({
 export function CtaScrollStep() {
   useTourStep(
     "scroll-cta",
-    "Scroll alla CTA",
+    "Scroll to call-to-action",
     async () => {
       await scrollIntoView("#cta", { settleMs: 600 });
       return { target: "cta" };
@@ -131,8 +131,8 @@ export function ProductGrid() {
       <ProductRevealStep onHighlight={setHighlight} />
 
       <header className="section-header">
-        <p className="eyebrow">Catalogo · phase 2 parallelo</p>
-        <h2>Prodotti consigliati</h2>
+        <p className="eyebrow">Catalog · phase 2 parallel</p>
+        <h2>Recommended products</h2>
       </header>
 
       <div className={`product-grid ${loading ? "product-grid--loading" : ""}`}>
@@ -145,8 +145,8 @@ export function ProductGrid() {
               <div className="skeleton" />
             ) : (
               <>
-                <h3>{n === 1 && highlight ? highlight : `Prodotto ${n}`}</h3>
-                <p>Fetch parallelo + reveal con after[]</p>
+                <h3>{n === 1 && highlight ? highlight : `Product ${n}`}</h3>
+                <p>Parallel fetch + reveal with after[]</p>
               </>
             )}
           </article>
@@ -157,7 +157,7 @@ export function ProductGrid() {
 }
 
 export function MessageBanner() {
-  const [message, setMessage] = useState("In attesa della coreografia…");
+  const [message, setMessage] = useState("Waiting for choreography…");
 
   return (
     <section className="message-banner" id="message">
@@ -165,7 +165,7 @@ export function MessageBanner() {
       <PersonalizedMessageStep onMessage={setMessage} />
 
       <div className="message-banner-inner">
-        <p className="message-banner-label">Messaggio orchestrato</p>
+        <p className="message-banner-label">Orchestrated message</p>
         <p className="message-banner-text">{message}</p>
       </div>
     </section>
@@ -177,7 +177,7 @@ export function CtaSection() {
     <section className="cta" id="cta">
       <CtaScrollStep />
       <h2>v2.0 — after, phase, abort, progress</h2>
-      <p>Due API in parallelo (phase 2), poi messaggio con after[], poi scroll.</p>
+      <p>Two parallel APIs (phase 2), then message with after[], then scroll.</p>
       <code className="code-snippet">
         {`useOrchestRateStep('msg', effect, {
   after: ['fetch-a', 'fetch-b'],
@@ -196,10 +196,10 @@ export function PerfectDemoPage() {
 
       <header className="hero">
         <p className="eyebrow">OrchestRate v2</p>
-        <h1>Onboarding guidato, fatto bene</h1>
+        <h1>Guided onboarding, done right</h1>
         <p className="lead">
-          Scroll → <strong>2 API in parallelo</strong> → highlight → messaggio con{" "}
-          <code>after[]</code> → scroll CTA. Ogni componente registra il suo passo.
+          Scroll → <strong>2 parallel APIs</strong> → highlight → message with{" "}
+          <code>after[]</code> → scroll to CTA. Each component registers its own step.
         </p>
         <div className="hero-flow">
           <span>phase 1 · scroll</span>
@@ -217,7 +217,7 @@ export function PerfectDemoPage() {
       <CtaSection />
 
       <footer className="demo-footer">
-        <p>Coreografia completata.</p>
+        <p>Choreography complete.</p>
       </footer>
     </main>
   );
